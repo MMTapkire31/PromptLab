@@ -4,6 +4,18 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from llm_adapters.groq_adapter import GroqAdapter
+from llm_adapters.gemini_adapter import GeminiAdapter
+
+
+# Maps each model name to which adapter should handle it
+ADAPTERS = {
+    "openai/gpt-oss-20b": GroqAdapter(),
+    "openai/gpt-oss-120b": GroqAdapter(),
+    "qwen/qwen3.8-27b": GroqAdapter(),
+    "allam-2-7b": GroqAdapter(),
+    "gemini-3.8-flash": GeminiAdapter(),
+    "gemini-3.1-flash-lite": GeminiAdapter(),
+}
 
 
 @api_view(['POST'])
@@ -18,18 +30,21 @@ def compare_prompts(request):
             status=400
         )
 
-    groq_adapter = GroqAdapter()
+    unknown_models = [m for m in models if m not in ADAPTERS]
+    if unknown_models:
+        return Response(
+            {"error": f"Unknown model(s): {unknown_models}. Available: {list(ADAPTERS.keys())}"},
+            status=400
+        )
+
     results = []
 
-    # Fire all model calls at once instead of one-by-one.
     with ThreadPoolExecutor(max_workers=len(models)) as executor:
-        # Kick off every call and remember which future belongs to which model
         future_to_model = {
-            executor.submit(groq_adapter.call, prompt, model, prompt_type): model
+            executor.submit(ADAPTERS[model].call, prompt, model, prompt_type): model
             for model in models
         }
 
-        # Collect results as each one finishes (not necessarily in the order submitted)
         for future in as_completed(future_to_model):
             result = future.result()
             results.append(result.__dict__)
