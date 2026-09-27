@@ -28,17 +28,20 @@ Unlike typical "compare models side by side" tools, PromptLab's core focus is co
 - **LLM Providers:** Groq (OpenAI GPT-OSS, Qwen, Allam models) — Gemini planned next
 
 ## Project Structure
+
+```
 promptlab/
 ├── backend/
-│ ├── manage.py
-│ ├── promptlab_project/ # Django settings, URL routing
-│ ├── comparisons/ # /api/compare/ endpoint, models, views
-│ └── llm_adapters/ # provider-agnostic adapter layer
-│ ├── base.py # BaseLLMAdapter, LLMResponse
-│ └── groq_adapter.py # Groq API integration
-├── frontend/ # React (Vite) app
-├── .env.example # env var template (no real keys)
+│   ├── manage.py
+│   ├── promptlab_project/      # Django settings, URL routing
+│   ├── comparisons/             # /api/compare/ endpoint, models, views
+│   └── llm_adapters/            # provider-agnostic adapter layer
+│       ├── base.py               # BaseLLMAdapter, LLMResponse
+│       └── groq_adapter.py       # Groq API integration
+├── frontend/                    # React (Vite) app
+├── .env.example                 # env var template (no real keys)
 └── README.md
+```
 
 
 ## Setup
