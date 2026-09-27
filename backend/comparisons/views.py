@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -16,14 +18,21 @@ def compare_prompts(request):
             status=400
         )
 
-  
-
     groq_adapter = GroqAdapter()
     results = []
 
-    for model in models:
-        result = groq_adapter.call(prompt=prompt, model=model, prompt_type=prompt_type)
-        results.append(result.__dict__)  # convert the LLMResponse dataclass to a dict for JSON
+    # Fire all model calls at once instead of one-by-one.
+    with ThreadPoolExecutor(max_workers=len(models)) as executor:
+        # Kick off every call and remember which future belongs to which model
+        future_to_model = {
+            executor.submit(groq_adapter.call, prompt, model, prompt_type): model
+            for model in models
+        }
+
+        # Collect results as each one finishes (not necessarily in the order submitted)
+        for future in as_completed(future_to_model):
+            result = future.result()
+            results.append(result.__dict__)
 
     return Response({
         "prompt": prompt,
