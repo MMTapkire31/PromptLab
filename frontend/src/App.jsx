@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { comparePrompts } from "./api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { comparePrompts } from "./api";
 
 const PROMPT_TYPES = [
   "zero-shot",
@@ -25,7 +25,19 @@ const MODELS = [
   { id: "ministral-14b-latest", provider: "Mistral" },
 ];
 
+const HISTORY_KEY = "promptlab_history";
+const MAX_HISTORY = 50;
+
 const emptyExample = () => ({ input: "", output: "" });
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
 
 function App() {
   const [prompt, setPrompt] = useState("");
@@ -40,11 +52,23 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const [history, setHistory] = useState(loadHistory);
+  const [activeId, setActiveId] = useState(null);
+
   const chatEndRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [loading, results]);
+
+  // Save history to the browser whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch {
+      /* storage full or blocked: history just won't persist */
+    }
+  }, [history]);
 
   const needsExamples = promptType === "one-shot" || promptType === "few-shot";
   const neededExamples = promptType === "one-shot" ? 1 : 2;
@@ -76,6 +100,42 @@ function App() {
     setFinalPrompt("");
     setError(null);
     setPrompt("");
+    setActiveId(null);
+  };
+
+  const openEntry = (entry) => {
+    if (loading) return;
+    setActiveId(entry.id);
+    setLastRun({
+      prompt: entry.prompt,
+      promptType: entry.promptType,
+      models: entry.models,
+    });
+    setResults(entry.results);
+    setFinalPrompt(entry.finalPrompt);
+    setError(null);
+
+    // Restore the form so the run can be tweaked and repeated
+    setPrompt(entry.prompt);
+    setPromptType(entry.promptType);
+    setSelectedModels(entry.models);
+    setRole(entry.role || "");
+    const padded = [...(entry.examples || [])];
+    while (padded.length < 2) padded.push(emptyExample());
+    setExamples(padded);
+  };
+
+  const deleteEntry = (id, e) => {
+    e.stopPropagation();
+    setHistory((h) => h.filter((x) => x.id !== id));
+    if (activeId === id) resetChat();
+  };
+
+  const clearHistory = () => {
+    if (window.confirm("Delete all saved comparisons?")) {
+      setHistory([]);
+      setActiveId(null);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -85,6 +145,7 @@ function App() {
     setError(null);
     setResults([]);
     setFinalPrompt("");
+    setActiveId(null);
     setLastRun({ prompt, promptType, models: selectedModels });
     try {
       const data = await comparePrompts({
@@ -96,6 +157,20 @@ function App() {
       });
       setResults(data.results);
       setFinalPrompt(data.final_prompt);
+
+      const entry = {
+        id: Date.now(),
+        createdAt: new Date().toISOString(),
+        prompt,
+        promptType,
+        role: promptType === "role-based" ? role : "",
+        examples: needsExamples ? filledExamples : [],
+        models: selectedModels,
+        finalPrompt: data.final_prompt,
+        results: data.results,
+      };
+      setHistory((h) => [entry, ...h].slice(0, MAX_HISTORY));
+      setActiveId(entry.id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -119,7 +194,42 @@ function App() {
         <button className="new-btn" onClick={resetChat}>
           + New comparison
         </button>
-        <div className="history-empty">History will appear here.</div>
+
+        <div className="history">
+          {history.length === 0 ? (
+            <div className="history-empty">Your comparisons will appear here.</div>
+          ) : (
+            <>
+              <div className="history-head">
+                <span>History</span>
+                <button className="ghost" onClick={clearHistory}>
+                  Clear all
+                </button>
+              </div>
+              {history.map((h) => (
+                <div
+                  key={h.id}
+                  className={`history-item ${h.id === activeId ? "active" : ""}`}
+                  onClick={() => openEntry(h)}
+                  title={new Date(h.createdAt).toLocaleString()}
+                >
+                  <div className="history-title">{h.prompt}</div>
+                  <div className="history-sub">
+                    <span className="badge">{h.promptType}</span>
+                    <span>{h.models.length} models</span>
+                    <button
+                      className="x"
+                      onClick={(e) => deleteEntry(h.id, e)}
+                      title="Delete"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       </aside>
 
       <main className="main">
@@ -176,8 +286,10 @@ function App() {
                           <div className="err">{r.error}</div>
                         ) : (
                           <div className="card-body">
-                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.output_text}</ReactMarkdown>
-                              </div>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {r.output_text}
+                            </ReactMarkdown>
+                          </div>
                         )}
                       </div>
                     ))}

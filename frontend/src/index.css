@@ -249,3 +249,58 @@ select, input[type="text"] {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
 }
+
+/* ---------- history sidebar ---------- */
+.sidebar { min-height: 0; overflow: hidden; }
+.history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.history-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.history-item:hover { background: var(--panel-2); }
+.history-item.active { background: var(--panel-2); border-color: var(--accent); }
+.history-title {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.history-sub .badge { margin: 0; }
+.history-sub .x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.history-sub .x:hover { color: var(--danger); }
