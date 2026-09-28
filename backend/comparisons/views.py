@@ -5,6 +5,7 @@ from rest_framework.response import Response
 
 from llm_adapters.groq_adapter import GroqAdapter
 from llm_adapters.gemini_adapter import GeminiAdapter
+from llm_adapters.mistral_adapter import MistralAdapter
 
 
 # Maps each model name to which adapter should handle it
@@ -15,6 +16,8 @@ ADAPTERS = {
     "allam-2-7b": GroqAdapter(),
     "gemini-3.8-flash": GeminiAdapter(),
     "gemini-3.1-flash-lite": GeminiAdapter(),
+    "ministral-8b-latest": MistralAdapter(),
+    "ministral-14b-latest": MistralAdapter(),
 }
 
 
