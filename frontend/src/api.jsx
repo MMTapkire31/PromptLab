@@ -1,5 +1,14 @@
 const API_BASE = "http://127.0.0.1:8000/api";
 
+export async function fetchModels() {
+  const response = await fetch(`${API_BASE}/models/`);
+  if (!response.ok) {
+    throw new Error(`Could not load models (status ${response.status})`);
+  }
+  const data = await response.json();
+  return data.models;
+}
+
 export async function comparePrompts({ prompt, promptType, models, examples, role }) {
   const response = await fetch(`${API_BASE}/compare/`, {
     method: "POST",

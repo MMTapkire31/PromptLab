@@ -2,7 +2,7 @@ import os
 import time
 import requests
 
-from .base import BaseLLMAdapter, LLMResponse
+from .base import BaseLLMAdapter, LLMResponse, post_with_retry
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
@@ -35,7 +35,7 @@ class GeminiAdapter(BaseLLMAdapter):
 
         start = time.time()
         try:
-            response = requests.post(url, json=payload, timeout=30)
+            response = post_with_retry(url, json=payload, timeout=30)
             latency_ms = (time.time() - start) * 1000
 
             if response.status_code != 200:

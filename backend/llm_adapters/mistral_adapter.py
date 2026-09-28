@@ -2,7 +2,7 @@ import os
 import time
 import requests
 
-from .base import BaseLLMAdapter, LLMResponse
+from .base import BaseLLMAdapter, LLMResponse, post_with_retry
 
 MISTRAL_API_BASE = "https://api.mistral.ai/v1/chat/completions"
 
@@ -38,7 +38,7 @@ class MistralAdapter(BaseLLMAdapter):
 
         start = time.time()
         try:
-            response = requests.post(MISTRAL_API_BASE, json=payload, headers=headers, timeout=30)
+            response = post_with_retry(MISTRAL_API_BASE, json=payload, headers=headers, timeout=30)
             latency_ms = (time.time() - start) * 1000
 
             if response.status_code != 200:

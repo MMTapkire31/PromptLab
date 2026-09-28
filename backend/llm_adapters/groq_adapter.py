@@ -2,7 +2,7 @@ import os
 import time
 import requests
 
-from .base import BaseLLMAdapter, LLMResponse
+from .base import BaseLLMAdapter, LLMResponse, post_with_retry
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -34,7 +34,7 @@ class GroqAdapter(BaseLLMAdapter):
 
         start = time.time()
         try:
-            response = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
+            response = post_with_retry(GROQ_API_URL, headers=headers, json=payload, timeout=30)
             latency_ms = (time.time() - start) * 1000
 
             if response.status_code != 200:

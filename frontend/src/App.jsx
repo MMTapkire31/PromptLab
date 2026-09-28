@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { comparePrompts } from "./api";
+import { comparePrompts, fetchModels } from "./api";
 
 const PROMPT_TYPES = [
   "zero-shot",
@@ -10,19 +10,6 @@ const PROMPT_TYPES = [
   "chain-of-thought",
   "role-based",
   "structured",
-];
-
-const PROVIDERS = ["Groq", "Gemini", "Mistral"];
-
-const MODELS = [
-  { id: "openai/gpt-oss-20b", provider: "Groq" },
-  { id: "openai/gpt-oss-120b", provider: "Groq" },
-  { id: "qwen/qwen3.8-27b", provider: "Groq" },
-  { id: "allam-2-7b", provider: "Groq" },
-  { id: "gemini-3.8-flash", provider: "Gemini" },
-  { id: "gemini-3.1-flash-lite", provider: "Gemini" },
-  { id: "ministral-8b-latest", provider: "Mistral" },
-  { id: "ministral-14b-latest", provider: "Mistral" },
 ];
 
 const HISTORY_KEY = "promptlab_history";
@@ -46,16 +33,32 @@ function App() {
   const [role, setRole] = useState("");
   const [examples, setExamples] = useState([emptyExample(), emptyExample()]);
 
+  const [models, setModels] = useState([]); // loaded from the backend
+  const [modelsStatus, setModelsStatus] = useState("loading"); // loading | ready | error
+
   const [lastRun, setLastRun] = useState(null); // what the chat area is showing
   const [results, setResults] = useState([]);
   const [finalPrompt, setFinalPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [retrying, setRetrying] = useState([]); // model ids being retried
   const [error, setError] = useState(null);
 
   const [history, setHistory] = useState(loadHistory);
   const [activeId, setActiveId] = useState(null);
 
   const chatEndRef = useRef(null);
+
+  const providers = [...new Set(models.map((m) => m.provider))];
+
+  // Load the model list from the backend once
+  useEffect(() => {
+    fetchModels()
+      .then((list) => {
+        setModels(list);
+        setModelsStatus("ready");
+      })
+      .catch(() => setModelsStatus("error"));
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -104,21 +107,25 @@ function App() {
   };
 
   const openEntry = (entry) => {
-    if (loading) return;
+    if (loading || retrying.length > 0) return;
     setActiveId(entry.id);
     setLastRun({
       prompt: entry.prompt,
       promptType: entry.promptType,
       models: entry.models,
+      role: entry.role || undefined,
+      examples: entry.examples && entry.examples.length ? entry.examples : undefined,
     });
     setResults(entry.results);
     setFinalPrompt(entry.finalPrompt);
     setError(null);
 
-    // Restore the form so the run can be tweaked and repeated
+    // Restore the form so the run can be tweaked and repeated.
+    // Skip models the backend no longer offers, or the next run would be rejected.
+    const available = models.map((m) => m.id);
     setPrompt(entry.prompt);
     setPromptType(entry.promptType);
-    setSelectedModels(entry.models);
+    setSelectedModels(entry.models.filter((id) => available.includes(id)));
     setRole(entry.role || "");
     const padded = [...(entry.examples || [])];
     while (padded.length < 2) padded.push(emptyExample());
@@ -141,19 +148,28 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canSubmit || loading) return;
+    const runRole = promptType === "role-based" ? role : undefined;
+    const runExamples = needsExamples ? filledExamples : undefined;
+
     setLoading(true);
     setError(null);
     setResults([]);
     setFinalPrompt("");
     setActiveId(null);
-    setLastRun({ prompt, promptType, models: selectedModels });
+    setLastRun({
+      prompt,
+      promptType,
+      models: selectedModels,
+      role: runRole,
+      examples: runExamples,
+    });
     try {
       const data = await comparePrompts({
         prompt,
         promptType,
         models: selectedModels,
-        examples: needsExamples ? filledExamples : undefined,
-        role: promptType === "role-based" ? role : undefined,
+        examples: runExamples,
+        role: runRole,
       });
       setResults(data.results);
       setFinalPrompt(data.final_prompt);
@@ -163,8 +179,8 @@ function App() {
         createdAt: new Date().toISOString(),
         prompt,
         promptType,
-        role: promptType === "role-based" ? role : "",
-        examples: needsExamples ? filledExamples : [],
+        role: runRole || "",
+        examples: runExamples || [],
         models: selectedModels,
         finalPrompt: data.final_prompt,
         results: data.results,
@@ -175,6 +191,33 @@ function App() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Re-run a single model from the current comparison
+  const retryModel = async (modelId) => {
+    if (!lastRun || retrying.includes(modelId)) return;
+    setRetrying((r) => [...r, modelId]);
+    try {
+      const data = await comparePrompts({
+        prompt: lastRun.prompt,
+        promptType: lastRun.promptType,
+        models: [modelId],
+        examples: lastRun.examples,
+        role: lastRun.role,
+      });
+      const fresh = data.results[0];
+      const swap = (list) =>
+        list.map((r) => (r.model_name === modelId ? fresh : r));
+      setResults(swap);
+      // keep the saved history entry in sync with the new result
+      setHistory((h) =>
+        h.map((x) => (x.id === activeId ? { ...x, results: swap(x.results) } : x))
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRetrying((r) => r.filter((id) => id !== modelId));
     }
   };
 
@@ -271,28 +314,51 @@ function App() {
                     ))}
 
                   {!loading &&
-                    results.map((r) => (
-                      <div
-                        className={`card ${r.error ? "error" : ""}`}
-                        key={r.model_name}
-                      >
-                        <h3>{r.model_name}</h3>
-                        <div className="meta">
-                          {r.provider} · {Math.round(r.latency_ms)} ms
-                          {r.output_tokens != null &&
-                            ` · ${r.output_tokens} output tokens`}
-                        </div>
-                        {r.error ? (
-                          <div className="err">{r.error}</div>
-                        ) : (
-                          <div className="card-body">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {r.output_text}
-                            </ReactMarkdown>
+                    results.map((r) => {
+                      const isRetrying = retrying.includes(r.model_name);
+                      return (
+                        <div
+                          className={`card ${r.error && !isRetrying ? "error" : ""}`}
+                          key={r.model_name}
+                        >
+                          <h3>{r.model_name}</h3>
+                          <div className="meta">
+                            {isRetrying
+                              ? "retrying…"
+                              : `${r.provider} · ${Math.round(r.latency_ms)} ms${
+                                  r.output_tokens != null
+                                    ? ` · ${r.output_tokens} output tokens`
+                                    : ""
+                                }`}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {isRetrying ? (
+                            <div className="dots">
+                              <span />
+                              <span />
+                              <span />
+                            </div>
+                          ) : r.error ? (
+                            <>
+                              <div className="err">{r.error}</div>
+                              <button
+                                type="button"
+                                className="ghost"
+                                style={{ marginTop: 10 }}
+                                onClick={() => retryModel(r.model_name)}
+                              >
+                                Retry
+                              </button>
+                            </>
+                          ) : (
+                            <div className="card-body">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {r.output_text}
+                              </ReactMarkdown>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               </>
             )}
@@ -362,18 +428,29 @@ function App() {
               placeholder="Type your prompt here... (Enter to send, Shift+Enter for a new line)"
             />
 
-            {PROVIDERS.map((p) => (
+            {modelsStatus === "loading" && (
+              <div className="tagline">Loading models…</div>
+            )}
+            {modelsStatus === "error" && (
+              <div className="err">
+                Couldn't load the model list. Is the backend running on port 8000?
+              </div>
+            )}
+
+            {providers.map((p) => (
               <div className="row" key={p}>
                 <span className="provider-label">{p}</span>
-                {MODELS.filter((m) => m.provider === p).map((m) => (
-                  <span
-                    key={m.id}
-                    className={`chip ${selectedModels.includes(m.id) ? "on" : ""}`}
-                    onClick={() => toggleModel(m.id)}
-                  >
-                    {m.id}
-                  </span>
-                ))}
+                {models
+                  .filter((m) => m.provider === p)
+                  .map((m) => (
+                    <span
+                      key={m.id}
+                      className={`chip ${selectedModels.includes(m.id) ? "on" : ""}`}
+                      onClick={() => toggleModel(m.id)}
+                    >
+                      {m.id}
+                    </span>
+                  ))}
               </div>
             ))}
 

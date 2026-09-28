@@ -3,24 +3,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from llm_adapters.groq_adapter import GroqAdapter
-from llm_adapters.gemini_adapter import GeminiAdapter
-from llm_adapters.mistral_adapter import MistralAdapter
+from llm_adapters.registry import ADAPTERS, public_models
 
 from .prompt_builder import build_prompt
 
 
-# Maps each model name to the adapter that knows how to call it
-ADAPTERS = {
-    "openai/gpt-oss-20b": GroqAdapter(),
-    "openai/gpt-oss-120b": GroqAdapter(),
-    "qwen/qwen3.8-27b": GroqAdapter(),
-    "allam-2-7b": GroqAdapter(),
-    "gemini-3.8-flash": GeminiAdapter(),
-    "gemini-3.1-flash-lite": GeminiAdapter(),
-    "ministral-8b-latest": MistralAdapter(),
-    "ministral-14b-latest": MistralAdapter(),
-}
+@api_view(['GET'])
+def list_models(request):
+    return Response({"models": public_models()})
 
 
 @api_view(['POST'])
