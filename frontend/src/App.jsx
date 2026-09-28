@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { comparePrompts } from "./api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const PROMPT_TYPES = [
   "zero-shot",
@@ -9,6 +11,8 @@ const PROMPT_TYPES = [
   "role-based",
   "structured",
 ];
+
+const PROVIDERS = ["Groq", "Gemini", "Mistral"];
 
 const MODELS = [
   { id: "openai/gpt-oss-20b", provider: "Groq" },
@@ -29,19 +33,27 @@ function App() {
   const [selectedModels, setSelectedModels] = useState([]);
   const [role, setRole] = useState("");
   const [examples, setExamples] = useState([emptyExample(), emptyExample()]);
+
+  const [lastRun, setLastRun] = useState(null); // what the chat area is showing
   const [results, setResults] = useState([]);
   const [finalPrompt, setFinalPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [loading, results]);
+
   const needsExamples = promptType === "one-shot" || promptType === "few-shot";
   const neededExamples = promptType === "one-shot" ? 1 : 2;
-  // one-shot only uses the first example; few-shot shows all of them
   const visibleExamples = promptType === "one-shot" ? examples.slice(0, 1) : examples;
   const filledExamples = visibleExamples.filter(
     (e) => e.input.trim() && e.output.trim()
   );
   const examplesOk = !needsExamples || filledExamples.length >= neededExamples;
+  const canSubmit = prompt.trim() !== "" && selectedModels.length > 0 && examplesOk;
 
   const toggleModel = (id) => {
     setSelectedModels((current) =>
@@ -54,19 +66,26 @@ function App() {
       current.map((e, i) => (i === index ? { ...e, [field]: value } : e))
     );
   };
-
   const addExample = () => setExamples((current) => [...current, emptyExample()]);
-
-  const removeExample = (index) => {
+  const removeExample = (index) =>
     setExamples((current) => current.filter((_, i) => i !== index));
+
+  const resetChat = () => {
+    setLastRun(null);
+    setResults([]);
+    setFinalPrompt("");
+    setError(null);
+    setPrompt("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canSubmit || loading) return;
     setLoading(true);
     setError(null);
     setResults([]);
     setFinalPrompt("");
+    setLastRun({ prompt, promptType, models: selectedModels });
     try {
       const data = await comparePrompts({
         prompt,
@@ -84,152 +103,183 @@ function App() {
     }
   };
 
-  const canSubmit =
-    prompt.trim() !== "" && selectedModels.length > 0 && examplesOk;
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      handleSubmit(e);
+    }
+  };
 
   return (
-    <div>
-      <h1>PromptLab</h1>
-      <p>Compare prompt engineering techniques across LLMs.</p>
-
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>
-            Prompt
-            <br />
-            <textarea
-              rows={5}
-              cols={60}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Type your prompt here..."
-            />
-          </label>
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          Prompt<span>Lab</span>
         </div>
+        <div className="tagline">Compare prompt engineering techniques across LLMs.</div>
+        <button className="new-btn" onClick={resetChat}>
+          + New comparison
+        </button>
+        <div className="history-empty">History will appear here.</div>
+      </aside>
 
-        <div>
-          <label>
-            Prompt type{" "}
-            <select
-              value={promptType}
-              onChange={(e) => setPromptType(e.target.value)}
-            >
-              {PROMPT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+      <main className="main">
+        <div className="chat">
+          <div className="chat-inner">
+            {!lastRun ? (
+              <div className="empty">
+                <h2>What do you want to test?</h2>
+                <p>Write a prompt, pick a technique and a few models, then compare.</p>
+              </div>
+            ) : (
+              <>
+                <div className="user-bubble">
+                  <div className="badge">{lastRun.promptType}</div>
+                  <div>{lastRun.prompt}</div>
+                </div>
 
-        {promptType === "role-based" && (
-          <div>
-            <label>
-              Role (optional){" "}
-              <input
-                type="text"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                placeholder="e.g. a high school physics teacher"
-                size={40}
-              />
-            </label>
+                {finalPrompt && (
+                  <details className="sent-prompt">
+                    <summary>Prompt actually sent to the models</summary>
+                    <pre>{finalPrompt}</pre>
+                  </details>
+                )}
+
+                {error && <p className="err">Error: {error}</p>}
+
+                <div className="grid">
+                  {loading &&
+                    lastRun.models.map((id) => (
+                      <div className="card" key={id}>
+                        <h3>{id}</h3>
+                        <div className="meta">thinking…</div>
+                        <div className="dots">
+                          <span />
+                          <span />
+                          <span />
+                        </div>
+                      </div>
+                    ))}
+
+                  {!loading &&
+                    results.map((r) => (
+                      <div
+                        className={`card ${r.error ? "error" : ""}`}
+                        key={r.model_name}
+                      >
+                        <h3>{r.model_name}</h3>
+                        <div className="meta">
+                          {r.provider} · {Math.round(r.latency_ms)} ms
+                          {r.output_tokens != null &&
+                            ` · ${r.output_tokens} output tokens`}
+                        </div>
+                        {r.error ? (
+                          <div className="err">{r.error}</div>
+                        ) : (
+                          <div className="card-body">
+                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.output_text}</ReactMarkdown>
+                              </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
+            <div ref={chatEndRef} />
           </div>
-        )}
+        </div>
 
-        {needsExamples && (
-          <div>
-            <p>
-              Examples ({promptType === "one-shot" ? "1 needed" : "at least 2 needed"})
-            </p>
-            {visibleExamples.map((ex, i) => (
-              <div key={i} style={{ marginBottom: 8 }}>
-                <input
-                  type="text"
-                  value={ex.input}
-                  onChange={(e) => updateExample(i, "input", e.target.value)}
-                  placeholder="Example input"
-                  size={30}
-                />{" "}
-                <input
-                  type="text"
-                  value={ex.output}
-                  onChange={(e) => updateExample(i, "output", e.target.value)}
-                  placeholder="Expected output"
-                  size={30}
-                />{" "}
-                {promptType === "few-shot" && examples.length > 2 && (
-                  <button type="button" onClick={() => removeExample(i)}>
-                    Remove
-                  </button>
+        <div className="composer-wrap">
+          <form className="composer" onSubmit={handleSubmit}>
+            {(promptType === "role-based" || needsExamples) && (
+              <div className="extras">
+                {promptType === "role-based" && (
+                  <input
+                    type="text"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    placeholder="Role (optional), e.g. a high school physics teacher"
+                  />
+                )}
+                {needsExamples && (
+                  <>
+                    <div className="tagline">
+                      Examples ({promptType === "one-shot" ? "1 needed" : "at least 2 needed"})
+                    </div>
+                    {visibleExamples.map((ex, i) => (
+                      <div className="example-row" key={i}>
+                        <input
+                          type="text"
+                          value={ex.input}
+                          onChange={(e) => updateExample(i, "input", e.target.value)}
+                          placeholder="Example input"
+                        />
+                        <input
+                          type="text"
+                          value={ex.output}
+                          onChange={(e) => updateExample(i, "output", e.target.value)}
+                          placeholder="Expected output"
+                        />
+                        {promptType === "few-shot" && examples.length > 2 && (
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => removeExample(i)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {promptType === "few-shot" && (
+                      <div>
+                        <button type="button" className="ghost" onClick={addExample}>
+                          + Add example
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-            ))}
-            {promptType === "few-shot" && (
-              <button type="button" onClick={addExample}>
-                + Add example
-              </button>
             )}
-          </div>
-        )}
 
-        <div>
-          <p>Models</p>
-          {MODELS.map((m) => (
-            <label key={m.id} style={{ display: "block" }}>
-              <input
-                type="checkbox"
-                checked={selectedModels.includes(m.id)}
-                onChange={() => toggleModel(m.id)}
-              />{" "}
-              {m.id} ({m.provider})
-            </label>
-          ))}
-        </div>
+            <textarea
+              rows={2}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your prompt here... (Enter to send, Shift+Enter for a new line)"
+            />
 
-        <button type="submit" disabled={!canSubmit || loading}>
-          {loading ? "Comparing..." : "Compare"}
-        </button>
-      </form>
+            {PROVIDERS.map((p) => (
+              <div className="row" key={p}>
+                <span className="provider-label">{p}</span>
+                {MODELS.filter((m) => m.provider === p).map((m) => (
+                  <span
+                    key={m.id}
+                    className={`chip ${selectedModels.includes(m.id) ? "on" : ""}`}
+                    onClick={() => toggleModel(m.id)}
+                  >
+                    {m.id}
+                  </span>
+                ))}
+              </div>
+            ))}
 
-      {error && <p style={{ color: "red" }}>Error: {error}</p>}
-
-      {finalPrompt && (
-        <details style={{ marginTop: 16 }}>
-          <summary>Prompt actually sent to the models</summary>
-          <pre style={{ whiteSpace: "pre-wrap" }}>{finalPrompt}</pre>
-        </details>
-      )}
-
-      {results.length > 0 && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "16px",
-            marginTop: "24px",
-          }}
-        >
-          {results.map((r) => (
-            <div
-              key={r.model_name}
-              style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12 }}
-            >
-              <h3>{r.model_name}</h3>
-              <small>
-                {r.provider} · {Math.round(r.latency_ms)} ms
-                {r.output_tokens != null && ` · ${r.output_tokens} output tokens`}
-              </small>
-              {r.error ? (
-                <p style={{ color: "red" }}>{r.error}</p>
-              ) : (
-                <p style={{ whiteSpace: "pre-wrap" }}>{r.output_text}</p>
-              )}
+            <div className="row">
+              <select value={promptType} onChange={(e) => setPromptType(e.target.value)}>
+                {PROMPT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <button className="send" type="submit" disabled={!canSubmit || loading}>
+                {loading ? "Comparing..." : "Compare"}
+              </button>
             </div>
-          ))}
+          </form>
         </div>
-      )}
+      </main>
     </div>
   );
 }

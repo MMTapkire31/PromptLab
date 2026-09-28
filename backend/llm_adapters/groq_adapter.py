@@ -30,8 +30,7 @@ class GroqAdapter(BaseLLMAdapter):
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 1024),
-        }
+            "max_tokens": kwargs.get("max_tokens", 900),        }
 
         start = time.time()
         try:
