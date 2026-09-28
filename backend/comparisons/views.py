@@ -7,8 +7,10 @@ from llm_adapters.groq_adapter import GroqAdapter
 from llm_adapters.gemini_adapter import GeminiAdapter
 from llm_adapters.mistral_adapter import MistralAdapter
 
+from .prompt_builder import build_prompt
 
-# Maps each model name to which adapter should handle it
+
+# Maps each model name to the adapter that knows how to call it
 ADAPTERS = {
     "openai/gpt-oss-20b": GroqAdapter(),
     "openai/gpt-oss-120b": GroqAdapter(),
@@ -40,11 +42,14 @@ def compare_prompts(request):
             status=400
         )
 
+    # Apply the chosen prompt engineering technique to the user's raw prompt
+    final_prompt = build_prompt(prompt, prompt_type)
+
     results = []
 
     with ThreadPoolExecutor(max_workers=len(models)) as executor:
         future_to_model = {
-            executor.submit(ADAPTERS[model].call, prompt, model, prompt_type): model
+            executor.submit(ADAPTERS[model].call, final_prompt, model, prompt_type): model
             for model in models
         }
 
@@ -54,6 +59,7 @@ def compare_prompts(request):
 
     return Response({
         "prompt": prompt,
+        "final_prompt": final_prompt,
         "prompt_type": prompt_type,
         "results": results,
     })
