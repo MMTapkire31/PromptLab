@@ -28,6 +28,8 @@ def compare_prompts(request):
     prompt = request.data.get('prompt')
     prompt_type = request.data.get('prompt_type', 'zero-shot')
     models = request.data.get('models', [])
+    examples = request.data.get('examples', [])
+    role = request.data.get('role')
 
     if not prompt or not models:
         return Response(
@@ -43,7 +45,10 @@ def compare_prompts(request):
         )
 
     # Apply the chosen prompt engineering technique to the user's raw prompt
-    final_prompt = build_prompt(prompt, prompt_type)
+    try:
+        final_prompt = build_prompt(prompt, prompt_type, examples=examples, role=role)
+    except ValueError as e:
+        return Response({"error": str(e)}, status=400)
 
     results = []
 

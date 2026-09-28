@@ -1,6 +1,6 @@
 const API_BASE = "http://127.0.0.1:8000/api";
 
-export async function comparePrompts({ prompt, promptType, models }) {
+export async function comparePrompts({ prompt, promptType, models, examples, role }) {
   const response = await fetch(`${API_BASE}/compare/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -8,6 +8,8 @@ export async function comparePrompts({ prompt, promptType, models }) {
       prompt,
       prompt_type: promptType,
       models,
+      examples,
+      role,
     }),
   });
 

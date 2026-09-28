@@ -21,13 +21,27 @@ const MODELS = [
   { id: "ministral-14b-latest", provider: "Mistral" },
 ];
 
+const emptyExample = () => ({ input: "", output: "" });
+
 function App() {
   const [prompt, setPrompt] = useState("");
   const [promptType, setPromptType] = useState("zero-shot");
   const [selectedModels, setSelectedModels] = useState([]);
+  const [role, setRole] = useState("");
+  const [examples, setExamples] = useState([emptyExample(), emptyExample()]);
   const [results, setResults] = useState([]);
+  const [finalPrompt, setFinalPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const needsExamples = promptType === "one-shot" || promptType === "few-shot";
+  const neededExamples = promptType === "one-shot" ? 1 : 2;
+  // one-shot only uses the first example; few-shot shows all of them
+  const visibleExamples = promptType === "one-shot" ? examples.slice(0, 1) : examples;
+  const filledExamples = visibleExamples.filter(
+    (e) => e.input.trim() && e.output.trim()
+  );
+  const examplesOk = !needsExamples || filledExamples.length >= neededExamples;
 
   const toggleModel = (id) => {
     setSelectedModels((current) =>
@@ -35,18 +49,34 @@ function App() {
     );
   };
 
+  const updateExample = (index, field, value) => {
+    setExamples((current) =>
+      current.map((e, i) => (i === index ? { ...e, [field]: value } : e))
+    );
+  };
+
+  const addExample = () => setExamples((current) => [...current, emptyExample()]);
+
+  const removeExample = (index) => {
+    setExamples((current) => current.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResults([]);
+    setFinalPrompt("");
     try {
       const data = await comparePrompts({
         prompt,
         promptType,
         models: selectedModels,
+        examples: needsExamples ? filledExamples : undefined,
+        role: promptType === "role-based" ? role : undefined,
       });
       setResults(data.results);
+      setFinalPrompt(data.final_prompt);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -54,7 +84,8 @@ function App() {
     }
   };
 
-  const canSubmit = prompt.trim() !== "" && selectedModels.length > 0;
+  const canSubmit =
+    prompt.trim() !== "" && selectedModels.length > 0 && examplesOk;
 
   return (
     <div>
@@ -92,6 +123,57 @@ function App() {
           </label>
         </div>
 
+        {promptType === "role-based" && (
+          <div>
+            <label>
+              Role (optional){" "}
+              <input
+                type="text"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                placeholder="e.g. a high school physics teacher"
+                size={40}
+              />
+            </label>
+          </div>
+        )}
+
+        {needsExamples && (
+          <div>
+            <p>
+              Examples ({promptType === "one-shot" ? "1 needed" : "at least 2 needed"})
+            </p>
+            {visibleExamples.map((ex, i) => (
+              <div key={i} style={{ marginBottom: 8 }}>
+                <input
+                  type="text"
+                  value={ex.input}
+                  onChange={(e) => updateExample(i, "input", e.target.value)}
+                  placeholder="Example input"
+                  size={30}
+                />{" "}
+                <input
+                  type="text"
+                  value={ex.output}
+                  onChange={(e) => updateExample(i, "output", e.target.value)}
+                  placeholder="Expected output"
+                  size={30}
+                />{" "}
+                {promptType === "few-shot" && examples.length > 2 && (
+                  <button type="button" onClick={() => removeExample(i)}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+            {promptType === "few-shot" && (
+              <button type="button" onClick={addExample}>
+                + Add example
+              </button>
+            )}
+          </div>
+        )}
+
         <div>
           <p>Models</p>
           {MODELS.map((m) => (
@@ -112,6 +194,13 @@ function App() {
       </form>
 
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
+
+      {finalPrompt && (
+        <details style={{ marginTop: 16 }}>
+          <summary>Prompt actually sent to the models</summary>
+          <pre style={{ whiteSpace: "pre-wrap" }}>{finalPrompt}</pre>
+        </details>
+      )}
 
       {results.length > 0 && (
         <div
