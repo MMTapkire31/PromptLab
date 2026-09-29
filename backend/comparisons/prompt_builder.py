@@ -39,3 +39,20 @@ def build_prompt(prompt, prompt_type, examples=None, role=None):
 
     # zero-shot (and any unrecognised type) sends the prompt unchanged
     return prompt
+
+
+def build_matrix_prompts(prompt, prompt_types, examples=None, role=None):
+    """Build a final prompt for each requested technique.
+
+    Returns a list of dicts: {"prompt_type": ..., "final_prompt": ... } or
+    {"prompt_type": ..., "error": ...} for a technique that couldn't be built
+    (e.g. few-shot with no examples supplied).
+    """
+    built = []
+    for pt in prompt_types:
+        try:
+            final_prompt = build_prompt(prompt, pt, examples=examples, role=role)
+            built.append({"prompt_type": pt, "final_prompt": final_prompt})
+        except ValueError as e:
+            built.append({"prompt_type": pt, "error": str(e)})
+    return built

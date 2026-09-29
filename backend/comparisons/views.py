@@ -7,6 +7,8 @@ from llm_adapters.registry import ADAPTERS, public_models
 
 from .prompt_builder import build_prompt
 
+from .prompt_builder import build_prompt, build_matrix_prompts
+
 
 @api_view(['GET'])
 def list_models(request):
@@ -58,3 +60,61 @@ def compare_prompts(request):
         "prompt_type": prompt_type,
         "results": results,
     })
+
+
+@api_view(['POST'])
+def compare_matrix(request):
+    prompt = request.data.get('prompt')
+    prompt_types = request.data.get('prompt_types', [])
+    models = request.data.get('models', [])
+    examples = request.data.get('examples', [])
+    role = request.data.get('role')
+
+    if not prompt or not models or not prompt_types:
+        return Response(
+            {"error": "'prompt', 'prompt_types' and 'models' (all non-empty) are required."},
+            status=400
+        )
+
+    unknown_models = [m for m in models if m not in ADAPTERS]
+    if unknown_models:
+        return Response(
+            {"error": f"Unknown model(s): {unknown_models}. Available: {list(ADAPTERS.keys())}"},
+            status=400
+        )
+
+    built = build_matrix_prompts(prompt, prompt_types, examples=examples, role=role)
+    runnable = [b for b in built if "final_prompt" in b]
+
+    # (prompt_type, model) pairs we actually need to call
+    jobs = [
+        (b["prompt_type"], b["final_prompt"], model)
+        for b in runnable
+        for model in models
+    ]
+
+    results_by_type = {b["prompt_type"]: [] for b in built}
+
+    if jobs:
+        with ThreadPoolExecutor(max_workers=min(len(jobs), 16)) as executor:
+            future_to_job = {
+                executor.submit(ADAPTERS[model].call, final_prompt, model, pt): (pt, model)
+                for pt, final_prompt, model in jobs
+            }
+            for future in as_completed(future_to_job):
+                pt, _model = future_to_job[future]
+                result = future.result()
+                results_by_type[pt].append(result.__dict__)
+
+    matrix = []
+    for b in built:
+        entry = {"prompt_type": b["prompt_type"]}
+        if "error" in b:
+            entry["error"] = b["error"]
+            entry["results"] = []
+        else:
+            entry["final_prompt"] = b["final_prompt"]
+            entry["results"] = results_by_type[b["prompt_type"]]
+        matrix.append(entry)
+
+    return Response({"prompt": prompt, "models": models, "matrix": matrix})
