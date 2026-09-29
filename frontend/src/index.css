@@ -355,3 +355,31 @@ select, input[type="text"] {
 .tech-cell { white-space: nowrap; background: var(--panel); }
 .matrix-cell { min-width: 260px; background: var(--panel); }
 .matrix-cell .card-body { font-size: 0.92rem; }
+
+/* ---------- judge scores ---------- */
+.scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.score-pill {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--muted);
+}
+.score-error {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}

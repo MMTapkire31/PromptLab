@@ -26,6 +26,23 @@ function loadHistory() {
   }
 }
 
+function ScoreBadges({ scores }) {
+  if (!scores) return null;
+  if (scores.error) {
+    return <div className="score-error">Scoring unavailable: {scores.error}</div>;
+  }
+  const metrics = ["accuracy", "creativity", "readability", "completeness", "reasoning"];
+  return (
+    <div className="scores">
+      {metrics.map((m) => (
+        <span key={m} className="score-pill" title={m}>
+          {m.slice(0, 3)} {scores[m]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const [prompt, setPrompt] = useState("");
   const [promptType, setPromptType] = useState("zero-shot");
@@ -46,7 +63,7 @@ function App() {
   const [history, setHistory] = useState(loadHistory);
   const [activeId, setActiveId] = useState(null);
 
-  // --- new: matrix mode ---
+  // --- matrix mode ---
   const [mode, setMode] = useState("single"); // "single" | "matrix"
   const [selectedTypes, setSelectedTypes] = useState(["zero-shot"]);
   const [matrix, setMatrix] = useState(null);
@@ -93,7 +110,6 @@ function App() {
     );
   };
 
-  // --- new: technique toggle for matrix mode ---
   const toggleType = (t) => {
     setSelectedTypes((current) =>
       current.includes(t) ? current.filter((x) => x !== t) : [...current, t]
@@ -133,8 +149,6 @@ function App() {
     setFinalPrompt(entry.finalPrompt);
     setError(null);
 
-    // Restore the form so the run can be tweaked and repeated.
-    // Skip models the backend no longer offers, or the next run would be rejected.
     const available = models.map((m) => m.id);
     setPrompt(entry.prompt);
     setPromptType(entry.promptType);
@@ -207,7 +221,7 @@ function App() {
     }
   };
 
-    const handleMatrixSubmit = async (e) => {
+  const handleMatrixSubmit = async (e) => {
     e.preventDefault();
     if (prompt.trim() === "" || selectedModels.length === 0 || selectedTypes.length === 0) return;
     if (loading) return;
@@ -248,7 +262,6 @@ function App() {
       const swap = (list) =>
         list.map((r) => (r.model_name === modelId ? fresh : r));
       setResults(swap);
-      // keep the saved history entry in sync with the new result
       setHistory((h) =>
         h.map((x) => (x.id === activeId ? { ...x, results: swap(x.results) } : x))
       );
@@ -264,6 +277,7 @@ function App() {
       handleSubmit(e);
     }
   };
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -408,11 +422,14 @@ function App() {
                               </button>
                             </>
                           ) : (
-                            <div className="card-body">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {r.output_text}
-                              </ReactMarkdown>
-                            </div>
+                            <>
+                              <div className="card-body">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {r.output_text}
+                                </ReactMarkdown>
+                              </div>
+                              <ScoreBadges scores={r.scores} />
+                            </>
                           )}
                         </div>
                       );
@@ -468,6 +485,7 @@ function App() {
                                           {cell.output_text}
                                         </ReactMarkdown>
                                       </div>
+                                      <ScoreBadges scores={cell.scores} />
                                     </>
                                   )}
                                 </td>
