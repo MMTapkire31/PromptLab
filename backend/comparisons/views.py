@@ -5,9 +5,8 @@ from rest_framework.response import Response
 
 from llm_adapters.registry import ADAPTERS, public_models
 
-from .prompt_builder import build_prompt
-
 from .prompt_builder import build_prompt, build_matrix_prompts
+from .judge import score_many
 
 
 @api_view(['GET'])
@@ -53,6 +52,12 @@ def compare_prompts(request):
         for future in as_completed(future_to_model):
             result = future.result()
             results.append(result.__dict__)
+
+    # Score every successful answer with the LLM judge
+    scorable = [(r["model_name"], r["output_text"]) for r in results if not r["error"]]
+    scores = score_many(prompt, scorable)
+    for r in results:
+        r["scores"] = scores.get(r["model_name"]) if not r["error"] else None
 
     return Response({
         "prompt": prompt,
@@ -105,6 +110,15 @@ def compare_matrix(request):
                 pt, _model = future_to_job[future]
                 result = future.result()
                 results_by_type[pt].append(result.__dict__)
+
+        # Score every technique's row separately, right after its own calls finish
+        for pt, model_results in results_by_type.items():
+            scorable = [
+                (r["model_name"], r["output_text"]) for r in model_results if not r["error"]
+            ]
+            scores = score_many(prompt, scorable)
+            for r in model_results:
+                r["scores"] = scores.get(r["model_name"]) if not r["error"] else None
 
     matrix = []
     for b in built:

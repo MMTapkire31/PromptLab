@@ -304,3 +304,54 @@ select, input[type="text"] {
   line-height: 1;
 }
 .history-sub .x:hover { color: var(--danger); }
+
+/* ---------- mode switch ---------- */
+.mode-switch {
+  display: flex;
+  gap: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+.mode-switch button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 6px 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.mode-switch button.on {
+  background: var(--accent);
+  color: #0b0d12;
+  font-weight: 600;
+}
+
+/* ---------- matrix table ---------- */
+.matrix-table-wrap { overflow-x: auto; margin-top: 12px; }
+.matrix-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 600px;
+}
+.matrix-table th, .matrix-table td {
+  border: 1px solid var(--border);
+  padding: 10px;
+  vertical-align: top;
+  text-align: left;
+}
+.matrix-table th {
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tech-cell { white-space: nowrap; background: var(--panel); }
+.matrix-cell { min-width: 260px; background: var(--panel); }
+.matrix-cell .card-body { font-size: 0.92rem; }
