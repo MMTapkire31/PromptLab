@@ -74,6 +74,7 @@ def compare_matrix(request):
     models = request.data.get('models', [])
     examples = request.data.get('examples', [])
     role = request.data.get('role')
+    score_enabled = request.data.get('score', True)  # evaluate.py sends False
 
     if not prompt or not models or not prompt_types:
         return Response(
@@ -111,14 +112,15 @@ def compare_matrix(request):
                 result = future.result()
                 results_by_type[pt].append(result.__dict__)
 
-        # Score every technique's row separately, right after its own calls finish
-        for pt, model_results in results_by_type.items():
-            scorable = [
-                (r["model_name"], r["output_text"]) for r in model_results if not r["error"]
-            ]
-            scores = score_many(prompt, scorable)
-            for r in model_results:
-                r["scores"] = scores.get(r["model_name"]) if not r["error"] else None
+        # Score every technique's row separately, unless the caller turned scoring off
+        if score_enabled:
+            for pt, model_results in results_by_type.items():
+                scorable = [
+                    (r["model_name"], r["output_text"]) for r in model_results if not r["error"]
+                ]
+                scores = score_many(prompt, scorable)
+                for r in model_results:
+                    r["scores"] = scores.get(r["model_name"]) if not r["error"] else None
 
     matrix = []
     for b in built:

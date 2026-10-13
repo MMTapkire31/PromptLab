@@ -3,6 +3,10 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from llm_adapters.gemini_adapter import GeminiAdapter
+import json
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 JUDGE_MODEL = "gemini-3.8-flash"
 METRICS = ["accuracy", "creativity", "readability", "completeness", "reasoning"]
@@ -30,8 +34,7 @@ def _extract_json(text):
         text = fence.group(1)
     return json.loads(text)
 
-
-def score_answer(user_prompt, answer):
+def score_answer(user_prompt, answer, attempt=0):
     """Returns a dict of 1-10 scores plus 'notes', or {'error': ...}."""
     if not answer or not answer.strip():
         return {"error": "Nothing to score (empty answer)."}
@@ -42,6 +45,13 @@ def score_answer(user_prompt, answer):
         prompt_type="judge",
     )
     if result.error:
+        # post_with_retry inside the adapter already retried once; if the
+        # judge is still overloaded, try again a couple more times with a
+        # short pause, since judge calls tolerate extra latency better than
+        # the main answer calls do.
+        if "503" in result.error and attempt < 2:
+            time.sleep(1.5 * (attempt + 1))
+            return score_answer(user_prompt, answer, attempt=attempt + 1)
         return {"error": f"Judge call failed: {result.error}"}
 
     try:
@@ -55,7 +65,6 @@ def score_answer(user_prompt, answer):
         return scores
     except (json.JSONDecodeError, AttributeError, TypeError):
         return {"error": "Could not parse the judge's response."}
-
 
 def score_many(user_prompt, items):
     """items: list of (key, answer_text). Returns {key: scores_dict}."""
