@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { comparePrompts, compareMatrix, fetchModels } from "./api";
+import { comparePrompts, fetchModels } from "./api";
 
 const PROMPT_TYPES = [
   "zero-shot",
@@ -63,11 +63,6 @@ function App() {
   const [history, setHistory] = useState(loadHistory);
   const [activeId, setActiveId] = useState(null);
 
-  // --- matrix mode ---
-  const [mode, setMode] = useState("single"); // "single" | "matrix"
-  const [selectedTypes, setSelectedTypes] = useState(["zero-shot"]);
-  const [matrix, setMatrix] = useState(null);
-
   const chatEndRef = useRef(null);
 
   const providers = [...new Set(models.map((m) => m.provider))];
@@ -110,12 +105,6 @@ function App() {
     );
   };
 
-  const toggleType = (t) => {
-    setSelectedTypes((current) =>
-      current.includes(t) ? current.filter((x) => x !== t) : [...current, t]
-    );
-  };
-
   const updateExample = (index, field, value) => {
     setExamples((current) =>
       current.map((e, i) => (i === index ? { ...e, [field]: value } : e))
@@ -132,7 +121,6 @@ function App() {
     setError(null);
     setPrompt("");
     setActiveId(null);
-    setMatrix(null);
   };
 
   const openEntry = (entry) => {
@@ -149,6 +137,8 @@ function App() {
     setFinalPrompt(entry.finalPrompt);
     setError(null);
 
+    // Restore the form so the run can be tweaked and repeated.
+    // Skip models the backend no longer offers, or the next run would be rejected.
     const available = models.map((m) => m.id);
     setPrompt(entry.prompt);
     setPromptType(entry.promptType);
@@ -221,31 +211,6 @@ function App() {
     }
   };
 
-  const handleMatrixSubmit = async (e) => {
-    e.preventDefault();
-    if (prompt.trim() === "" || selectedModels.length === 0 || selectedTypes.length === 0) return;
-    if (loading) return;
-
-    setLoading(true);
-    setError(null);
-    setMatrix(null);
-    setLastRun({ prompt, promptType: null, models: selectedModels });
-    try {
-      const data = await compareMatrix({
-        prompt,
-        promptTypes: selectedTypes,
-        models: selectedModels,
-        examples: filledExamples,
-        role: role || undefined,
-      });
-      setMatrix(data.matrix);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Re-run a single model from the current comparison
   const retryModel = async (modelId) => {
     if (!lastRun || retrying.includes(modelId)) return;
@@ -262,6 +227,7 @@ function App() {
       const swap = (list) =>
         list.map((r) => (r.model_name === modelId ? fresh : r));
       setResults(swap);
+      // keep the saved history entry in sync with the new result
       setHistory((h) =>
         h.map((x) => (x.id === activeId ? { ...x, results: swap(x.results) } : x))
       );
@@ -288,23 +254,6 @@ function App() {
         <button className="new-btn" onClick={resetChat}>
           + New comparison
         </button>
-
-        <div className="mode-switch">
-          <button
-            type="button"
-            className={mode === "single" ? "on" : ""}
-            onClick={() => setMode("single")}
-          >
-            Single
-          </button>
-          <button
-            type="button"
-            className={mode === "matrix" ? "on" : ""}
-            onClick={() => setMode("matrix")}
-          >
-            Matrix
-          </button>
-        </div>
 
         <div className="history">
           {history.length === 0 ? (
@@ -349,16 +298,12 @@ function App() {
             {!lastRun ? (
               <div className="empty">
                 <h2>What do you want to test?</h2>
-                <p>
-                  {mode === "single"
-                    ? "Write a prompt, pick a technique and a few models, then compare."
-                    : "Write a prompt, pick several techniques and models, and see them all at once."}
-                </p>
+                <p>Write a prompt, pick a technique and a few models, then compare.</p>
               </div>
-            ) : mode === "single" || !matrix ? (
+            ) : (
               <>
                 <div className="user-bubble">
-                  {lastRun.promptType && <div className="badge">{lastRun.promptType}</div>}
+                  <div className="badge">{lastRun.promptType}</div>
                   <div>{lastRun.prompt}</div>
                 </div>
 
@@ -436,119 +381,62 @@ function App() {
                     })}
                 </div>
               </>
-            ) : (
-              <>
-                <div className="user-bubble">
-                  <div>{lastRun.prompt}</div>
-                </div>
-
-                {error && <p className="err">Error: {error}</p>}
-
-                <div className="matrix-table-wrap">
-                  <table className="matrix-table">
-                    <thead>
-                      <tr>
-                        <th>Technique</th>
-                        {lastRun.models.map((id) => (
-                          <th key={id}>{id}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {matrix.map((row) => (
-                        <tr key={row.prompt_type}>
-                          <td className="tech-cell">
-                            <span className="badge">{row.prompt_type}</span>
-                          </td>
-                          {row.error ? (
-                            <td colSpan={lastRun.models.length} className="err">
-                              {row.error}
-                            </td>
-                          ) : (
-                            lastRun.models.map((id) => {
-                              const cell = row.results.find((r) => r.model_name === id);
-                              return (
-                                <td key={id} className="matrix-cell">
-                                  {!cell ? (
-                                    <span className="tagline">no result</span>
-                                  ) : cell.error ? (
-                                    <span className="err">{cell.error}</span>
-                                  ) : (
-                                    <>
-                                      <div className="meta">
-                                        {Math.round(cell.latency_ms)} ms
-                                        {cell.output_tokens != null &&
-                                          ` · ${cell.output_tokens} tok`}
-                                      </div>
-                                      <div className="card-body">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                          {cell.output_text}
-                                        </ReactMarkdown>
-                                      </div>
-                                      <ScoreBadges scores={cell.scores} />
-                                    </>
-                                  )}
-                                </td>
-                              );
-                            })
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
             )}
             <div ref={chatEndRef} />
           </div>
         </div>
 
         <div className="composer-wrap">
-          <form
-            className="composer"
-            onSubmit={mode === "single" ? handleSubmit : handleMatrixSubmit}
-          >
-            {(promptType === "role-based" || needsExamples || mode === "matrix") && (
+          <form className="composer" onSubmit={handleSubmit}>
+            {(promptType === "role-based" || needsExamples) && (
               <div className="extras">
-                <input
-                  type="text"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  placeholder="Role (used only if a role-based technique is selected)"
-                />
-                <div className="tagline">
-                  Examples (used only if a one-shot/few-shot technique is selected)
-                </div>
-                {examples.map((ex, i) => (
-                  <div className="example-row" key={i}>
-                    <input
-                      type="text"
-                      value={ex.input}
-                      onChange={(e) => updateExample(i, "input", e.target.value)}
-                      placeholder="Example input"
-                    />
-                    <input
-                      type="text"
-                      value={ex.output}
-                      onChange={(e) => updateExample(i, "output", e.target.value)}
-                      placeholder="Expected output"
-                    />
-                    {examples.length > 2 && (
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => removeExample(i)}
-                      >
-                        Remove
-                      </button>
+                {promptType === "role-based" && (
+                  <input
+                    type="text"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    placeholder="Role (optional), e.g. a high school physics teacher"
+                  />
+                )}
+                {needsExamples && (
+                  <>
+                    <div className="tagline">
+                      Examples ({promptType === "one-shot" ? "1 needed" : "at least 2 needed"})
+                    </div>
+                    {visibleExamples.map((ex, i) => (
+                      <div className="example-row" key={i}>
+                        <input
+                          type="text"
+                          value={ex.input}
+                          onChange={(e) => updateExample(i, "input", e.target.value)}
+                          placeholder="Example input"
+                        />
+                        <input
+                          type="text"
+                          value={ex.output}
+                          onChange={(e) => updateExample(i, "output", e.target.value)}
+                          placeholder="Expected output"
+                        />
+                        {promptType === "few-shot" && examples.length > 2 && (
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => removeExample(i)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {promptType === "few-shot" && (
+                      <div>
+                        <button type="button" className="ghost" onClick={addExample}>
+                          + Add example
+                        </button>
+                      </div>
                     )}
-                  </div>
-                ))}
-                <div>
-                  <button type="button" className="ghost" onClick={addExample}>
-                    + Add example
-                  </button>
-                </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -586,45 +474,18 @@ function App() {
               </div>
             ))}
 
-            {mode === "single" ? (
-              <div className="row">
-                <select value={promptType} onChange={(e) => setPromptType(e.target.value)}>
-                  {PROMPT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <button className="send" type="submit" disabled={!canSubmit || loading}>
-                  {loading ? "Comparing..." : "Compare"}
-                </button>
-              </div>
-            ) : (
-              <div className="row">
-                <span className="provider-label">Techniques</span>
+            <div className="row">
+              <select value={promptType} onChange={(e) => setPromptType(e.target.value)}>
                 {PROMPT_TYPES.map((t) => (
-                  <span
-                    key={t}
-                    className={`chip ${selectedTypes.includes(t) ? "on" : ""}`}
-                    onClick={() => toggleType(t)}
-                  >
+                  <option key={t} value={t}>
                     {t}
-                  </span>
+                  </option>
                 ))}
-                <button
-                  className="send"
-                  type="submit"
-                  disabled={
-                    loading ||
-                    prompt.trim() === "" ||
-                    selectedModels.length === 0 ||
-                    selectedTypes.length === 0
-                  }
-                >
-                  {loading ? "Comparing..." : "Compare"}
-                </button>
-              </div>
-            )}
+              </select>
+              <button className="send" type="submit" disabled={!canSubmit || loading}>
+                {loading ? "Comparing..." : "Compare"}
+              </button>
+            </div>
           </form>
         </div>
       </main>
