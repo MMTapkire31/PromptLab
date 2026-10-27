@@ -8,6 +8,8 @@ Unlike typical "compare models side by side" tools, PromptLab's core focus is co
 
 ### Working
 - `/api/compare/` endpoint — submit a prompt + list of models, get back normalized responses (output text, latency, token counts, errors)
+- `/api/improve-prompt/` endpoint — generate an improved prompt and concise reasons using Groq's `openai/gpt-oss-20b` model
+- Prompt context — extract text from TXT, Markdown, PDF, DOCX, ZIP, and images (English OCR) in the browser; context is capped at 100,000 characters
 - Groq integration — 4 active models tested and working: `openai/gpt-oss-20b`, `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `allam-2-7b`
 - Provider-agnostic adapter pattern (`BaseLLMAdapter` / `LLMResponse`) so new providers plug in without touching the orchestration logic
 
@@ -17,7 +19,6 @@ Unlike typical "compare models side by side" tools, PromptLab's core focus is co
 - Prompt type selector (zero-shot, one-shot, few-shot, CoT, role-based, structured)
 - Structured scoring across metrics: accuracy, creativity, readability, completeness, reasoning
 - Bar / radar charts visualizing metric scores per model
-- AI-based prompt improvement suggestions
 - Prompt history with export to PDF / CSV
 - React frontend connected to the backend
 

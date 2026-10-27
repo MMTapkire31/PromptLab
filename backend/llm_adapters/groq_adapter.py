@@ -26,6 +26,7 @@ class GroqAdapter(BaseLLMAdapter):
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        headers["Authorization"] = "Bearer " + api_key
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],

@@ -9,7 +9,22 @@ export async function fetchModels() {
   return data.models;
 }
 
-export async function comparePrompts({ prompt, promptType, models, examples, role }) {
+export async function improvePrompt(prompt) {
+  const response = await fetch(`${API_BASE}/improve-prompt/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function comparePrompts({ prompt, promptType, models, examples, role, context }) {
   const response = await fetch(`${API_BASE}/compare/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -19,6 +34,7 @@ export async function comparePrompts({ prompt, promptType, models, examples, rol
       models,
       examples,
       role,
+      context,
     }),
   });
 
