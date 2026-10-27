@@ -16,3 +16,4 @@ frontend/dist/
 .vscode/
 .idea/
 .DS_Store
+frontend/.expo/
